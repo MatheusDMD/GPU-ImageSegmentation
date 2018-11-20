@@ -63,7 +63,7 @@ int NvidiaSSSH(float weights_h[], int destination_offsets_h[], int source_indice
     check(nvgraphGetVertexData(handle, graph, (void*)sssp_1_h, 0));
     
     printf("sssp_1_h\n");
-    for (i = 0; i<n; i++)  printf("%f\n",sssp_1_h[i]); printf("\n");
+    for (int i = 0; i < n; i++)  printf("%f\n",sssp_1_h[i]); printf("\n");
     printf("\nDone!\n");
 
     //Clean 
@@ -81,8 +81,7 @@ struct compare_custo_caminho {
 };
 
 graphParams GetGraphParams(imagem *img, std::vector<int> seeds, int seeds_count){
-
-    graphParams params;
+    graphParams params = new graphParams;
     params.nnz = img->total_size + 1; // +1 because of the mask seed to unify fg/bg
     params.n = img->total_size - (((img->cols + img->rows) * 2) - 8) + seeds_count;
     params.destination_offsets_h = new int[params.nnz + 1]; // +1 to add the size as the last item to the end of the array
@@ -93,7 +92,7 @@ graphParams GetGraphParams(imagem *img, std::vector<int> seeds, int seeds_count)
     params.destination_offsets_h[0] = 0;
     for(int vertex = 0; vertex < params.nnz - 1; vertex++ ){
 
-        int local_count = 0
+        int local_count = 0;
 
         int acima = vertex - img->cols;
         if (acima >= 0) {
@@ -264,21 +263,21 @@ int main(int argc, char **argv) {
         seeds_bg_count++;
     }
     
-    graphParams fg_params = GetGraphParams(img, seeds_fg, seeds_fg_count)
-    graphParams bg_params = GetGraphParams(img, seeds_bg, seeds_bg_count)
-
-    NvidiaSSSH(float weights_h[], int destination_offsets_h[], int source_indices_h[], const size_t n, const size_t nnz) 
-
-    imagem *saida = new_image(img->rows, img->cols);
+    graphParams fg_params = GetGraphParams(img, seeds_fg, seeds_fg_count);
+    graphParams bg_params = GetGraphParams(img, seeds_bg, seeds_bg_count);
     
-    for (int k = 0; k < saida->total_size; k++) {
-        if (fg.first[k] > bg.first[k]) {
-            saida->pixels[k] = 0;
-        } else {
-            saida->pixels[k] = 255;
-        }
-    }
+    NvidiaSSSH(fg_params.weights_h, fg_params.destination_offsets_h, fg_params.source_indices_h, fg_params.n, fg_params.nnz) 
+
+    // imagem *saida = new_image(img->rows, img->cols);
     
-    write_pgm(saida, path_output);    
+    // for (int k = 0; k < saida->total_size; k++) {
+    //     if (fg.first[k] > bg.first[k]) {
+    //         saida->pixels[k] = 0;
+    //     } else {
+    //         saida->pixels[k] = 255;
+    //     }
+    // }
+    
+    // write_pgm(saida, path_output);    
     return 0;
 }
