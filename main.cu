@@ -4,7 +4,6 @@
 #include <assert.h>
 #include <fstream>
 #include <cuda_runtime.h>
-#include <helper_cuda.h>
 #include "nvgraph.h"
 #include "imagem.h"
 
@@ -18,8 +17,8 @@ struct graphParams {
     float weights_h[];
     int destination_offsets_h[];
     int source_indices_h[];
-    const size_t n;
-    const size_t nnz;
+    size_t n;
+    size_t nnz;
 };
 
 
@@ -81,7 +80,14 @@ struct compare_custo_caminho {
 };
 
 graphParams GetGraphParams(imagem *img, std::vector<int> seeds, int seeds_count){
-    graphParams params = new graphParams;
+
+    graphParams params = {
+        0.0;
+        0;
+        0;
+        0;
+        0;
+    };
     params.nnz = img->total_size + 1; // +1 because of the mask seed to unify fg/bg
     params.n = img->total_size - (((img->cols + img->rows) * 2) - 8) + seeds_count;
     params.destination_offsets_h = new int[params.nnz + 1]; // +1 to add the size as the last item to the end of the array
@@ -266,7 +272,7 @@ int main(int argc, char **argv) {
     graphParams fg_params = GetGraphParams(img, seeds_fg, seeds_fg_count);
     graphParams bg_params = GetGraphParams(img, seeds_bg, seeds_bg_count);
     
-    NvidiaSSSH(fg_params.weights_h, fg_params.destination_offsets_h, fg_params.source_indices_h, fg_params.n, fg_params.nnz) 
+    NvidiaSSSH(fg_params.weights_h, fg_params.destination_offsets_h, fg_params.source_indices_h, fg_params.n, fg_params.nnz);
 
     // imagem *saida = new_image(img->rows, img->cols);
     
