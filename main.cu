@@ -82,11 +82,11 @@ struct compare_custo_caminho {
 graphParams GetGraphParams(imagem *img, std::vector<int> seeds, int seeds_count){
 
     graphParams params = {
-        0.0;
-        0;
-        0;
-        0;
-        0;
+        0.0,
+        0,
+        0,
+        0,
+        0,
     };
     params.nnz = img->total_size + 1; // +1 because of the mask seed to unify fg/bg
     params.n = img->total_size - (((img->cols + img->rows) * 2) - 8) + seeds_count;
