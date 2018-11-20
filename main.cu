@@ -14,9 +14,9 @@ typedef std::pair<double *, int *> result_sssp;
 typedef std::pair<int, int> seed;
 
 struct graphParams {
-    float weights_h[];
-    int destination_offsets_h[];
-    int source_indices_h[];
+    float * weights_h;
+    int * destination_offsets_h;
+    int * source_indices_h;
     size_t n;
     size_t nnz;
 };
