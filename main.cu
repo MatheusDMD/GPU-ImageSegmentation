@@ -4,7 +4,7 @@
 #include <assert.h>
 #include <fstream>
 #include <cuda_runtime.h>
-#include "nvgraph.h"
+#include <nvgraph.h>
 #include "imagem.h"
 
 typedef std::pair<double, int> custo_caminho;
@@ -87,9 +87,14 @@ graphParams GetGraphParams(imagem *img, std::vector<int> seeds, int seeds_count)
     params.weights_h = new float[params.n]();
     params.destination_offsets_h = new int[params.nnz + 1](); // +1 to add the size as the last item to the end of the array
     params.source_indices_h = new int[params.n]();
-
+    std::cout << "here" << std::endl;
     int count = 0;
     params.destination_offsets_h[0] = 0;
+
+    std::cout << params.nnz - 1 << std::endl;
+    std::cout << params.nnz + 1 << std::endl;
+    std::cout << std::endl;
+    
     for(int vertex = 0; vertex < params.nnz - 1; vertex++ ){
 
         int local_count = 0;
@@ -131,19 +136,24 @@ graphParams GetGraphParams(imagem *img, std::vector<int> seeds, int seeds_count)
             count++;
         }
 
+        std::cout << params.destination_offsets_h[vertex] + local_count << std::endl;
         params.destination_offsets_h[vertex + 1] = params.destination_offsets_h[vertex] + local_count;
     }
 
+    std::cout << "here2" << std::endl;
+    std::cout << params.destination_offsets_h[params.nnz - 3] << std::endl;
     //mask seed to all fg/bg
 
     params.destination_offsets_h[params.nnz - 2] = params.destination_offsets_h[params.nnz - 3] + 2;//because of the size of the last item
     params.destination_offsets_h[params.nnz - 1] = params.nnz;
 
+    std::cout << "here3" << std::endl;
     for(int i = 0; i < seeds_count; i++){
         params.source_indices_h[count] = seeds[i];
         params.weights_h[count] = 0;
         count++;
     }
+    std::cout << "here4" << std::endl;
 
     return params;
 }
@@ -247,24 +257,38 @@ int main(int argc, char **argv) {
     std::vector<int> seeds_bg;
     int seeds_bg_count;
     
-    std::cin >> n_fg >> n_bg;
+    std::cout << n_fg << std::endl;
+    std::cout << n_bg << std::endl;
+    std::cout << std::endl;
 
-    for(int i = 0; i <= n_fg; i++){
+    for(int i = 0; i < n_fg; i++){
         std::cin >> x >> y;
         int seed_fg = y * img->cols + x;
         seeds_fg.push_back(seed_fg);
         seeds_fg_count++;
+        std::cout << x << std::endl;
+        std::cout << y << std::endl;
+        std::cout << std::endl;
     }
+        std::cout << "a" << std::endl;
 
-    for(int i = 0; i <= n_bg; i++){
+    for(int i = 0; i < n_bg; i++){
         std::cin >> x >> y;
         int seed_bg = y * img->cols + x;
         seeds_bg.push_back(seed_bg);
         seeds_bg_count++;
+        std::cout << x << std::endl;
+        std::cout << y << std::endl;
+        std::cout << std::endl;
     }
+        std::cout << "done 1" << std::endl;
     
     graphParams fg_params = GetGraphParams(img, seeds_fg, seeds_fg_count);
+        std::cout << "c" << std::endl;
+    std::cout << fg_params.n << std::endl;
     graphParams bg_params = GetGraphParams(img, seeds_bg, seeds_bg_count);
+        std::cout << "d" << std::endl;
+    std::cout << bg_params.n << std::endl;
     
     NvidiaSSSH(fg_params.weights_h, fg_params.destination_offsets_h, fg_params.source_indices_h, fg_params.n, fg_params.nnz);
 
