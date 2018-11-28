@@ -1,13 +1,14 @@
 #include <cuda_runtime.h>
-#include <helper_cuda.h>
+#include <iostream>
 #include "nvgraph.h"
 
 void check(nvgraphStatus_t status) {
     if (status != NVGRAPH_STATUS_SUCCESS) {
-        printf("ERROR : %d\n",status);
+        std::cout << "ERROR : " << status << std::endl;
         exit(0);
     }
 }
+
 int main(int argc, char **argv) {
     const size_t  n = 6, nnz = 10, vertex_numsets = 1, edge_numsets = 1;
     float *sssp_1_h;
