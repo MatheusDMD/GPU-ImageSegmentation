@@ -32,11 +32,11 @@ void check_status(nvgraphStatus_t status)
     }
 }
 
-int NvidiaSSSH(float *weights_h, int *destination_offsets_h, int *source_indices_h, const size_t n, const size_t nnz, int source_seed) {
+int NvidiaSSSH(float *weights_h, int *destination_offsets_h, int *source_indices_h, const size_t n, const size_t nnz, int source_seed, float *sssp_1_h) {
     // const size_t  n = 6, nnz = 10;
     const size_t vertex_numsets = 1, edge_numsets = 1;
-    int i; //*destination_offsets_h, *source_indices_h;
-    float *sssp_1_h;// *sssp_2_h; //*weights_h, 
+    // int i; //*destination_offsets_h, *source_indices_h;
+    // float *sssp_1_h;// *sssp_2_h; //*weights_h, 
     void** vertex_dim;
 
     // nvgraph variables
@@ -49,7 +49,7 @@ int NvidiaSSSH(float *weights_h, int *destination_offsets_h, int *source_indices
 
     // Init host data
     
-    sssp_1_h = (float*)malloc(n*sizeof(float));
+    // sssp_1_h = (float*)malloc(n*sizeof(float));
     //sssp_2_h = (float*)malloc(n*sizeof(float));
     vertex_dim  = (void**)malloc(vertex_numsets*sizeof(void*));
     vertex_dimT = (cudaDataType_t*)malloc(vertex_numsets*sizeof(cudaDataType_t));
@@ -112,7 +112,7 @@ int NvidiaSSSH(float *weights_h, int *destination_offsets_h, int *source_indices
     std::cout << "SSSP6" << std::endl;
     
     // Solve
-    int source_vert = 0; //source_seed
+    int source_vert = source_seed; //source_seed
     check_status(nvgraphSssp(handle, graph, 0,  &source_vert, 0));
     std::cout << "SSSP7" << std::endl;
     
@@ -128,9 +128,6 @@ int NvidiaSSSH(float *weights_h, int *destination_offsets_h, int *source_indices
     check_status(nvgraphGetVertexData(handle, graph, (void*)sssp_1_h, 0));
     std::cout << "SSSP9" << std::endl;
     // expect sssp_1_h = (0.000000 0.500000 0.500000 1.333333 0.833333 1.333333)^T
-    printf("sssp_1_h\n");
-    for (i = 0; i<n; i++)  printf("%f\n",sssp_1_h[i]); printf("\n");
-    printf("\nDone!\n");
     
     std::cout << "SSSP10" << std::endl;
     
@@ -144,7 +141,7 @@ int NvidiaSSSH(float *weights_h, int *destination_offsets_h, int *source_indices
     free(destination_offsets_h);
     free(source_indices_h);
     free(weights_h);
-    free(sssp_1_h);
+    // free(sssp_1_h);
     // free(sssp_2_h);
     free(vertex_dim);
     free(vertex_dimT);
@@ -155,7 +152,6 @@ int NvidiaSSSH(float *weights_h, int *destination_offsets_h, int *source_indices
     check_status(nvgraphDestroyGraphDescr (handle, graph));
     check_status(nvgraphDestroy (handle));
     
-    std::cout << "SSSPUHUUUUL" << std::endl;
     return 0;
 }
 
@@ -183,31 +179,34 @@ graphParams GetGraphParams(imagem *img, std::vector<int> seeds, int seeds_count)
 
         int local_count = 0;
 
-        int acima = vertex - img->cols;
-        if (acima >= 0) {
+        int vertex_i = vertex / img->cols;
+        int vertex_j = vertex % img->cols;
+
+        if (vertex_i > 0) {
+            int acima = vertex - img->cols;
             double custo_acima = get_edge(img, vertex, acima);
             src_indices.push_back(acima);
             weights.push_back(custo_acima);
             local_count++;
         }
-        int abaixo = vertex + img->cols;
-        if (abaixo < img->total_size) {
+        if (vertex_i < img->rows - 1) {
+            int abaixo = vertex + img->cols;
             double custo_abaixo = get_edge(img, vertex, abaixo);
             src_indices.push_back(abaixo);
             weights.push_back(custo_abaixo);
             local_count++;
         }
 
-        int direita = vertex + 1;
-        if (direita < img->total_size) {
+        if (vertex_j < img->cols - 1) {
+            int direita = vertex + 1;
             double custo_direita = get_edge(img, vertex, direita);
             src_indices.push_back(direita);
             weights.push_back(custo_direita);
             local_count++;
         }
 
-        int esquerda = vertex - 1;
-        if (esquerda >= 0) {
+        if (vertex_j > 0) {
+            int esquerda = vertex - 1;
             double custo_esquerda = get_edge(img, vertex, esquerda);
             src_indices.push_back(esquerda);
             weights.push_back(custo_esquerda);
@@ -217,44 +216,55 @@ graphParams GetGraphParams(imagem *img, std::vector<int> seeds, int seeds_count)
         dest_offsets.push_back(dest_offsets.back() + local_count); // add local_count to last position vector
     }
 
-    for(int i = 0; i < seeds_count; i++ ){
-        weights.push_back(0);
-        src_indices.push_back(seeds[i]);
-        dest_offsets.push_back(dest_offsets.back() + 1);
-        std::cout << seeds[i] << std::endl;
-    }
+    // for(int i = 0; i < seeds_count; i++ ){
+    //     weights.push_back(0);
+    //     src_indices.push_back(seeds[i]);
+    //     dest_offsets.push_back(dest_offsets.back() + 1);
+    //     std::cout << seeds[i] << std::endl;
+    // }
     // dest_offsets.push_back(dest_offsets.back());
 
     graphParams params = {};
-    params.nnz = (img->total_size * 4) - (((img->cols + img->rows) * 2) + seeds_count); //total connections (+ seed_count to add the connections from all nodes from that type)
+    params.nnz = (img->total_size * 4) - (((img->cols + img->rows) * 2));// + seeds_count); //total connections (+ seed_count to add the connections from all nodes from that type)
     // params.source_indices_h = (int*) malloc(params.nnz*sizeof(int));
     // params.weights_h = (float*)malloc(params.nnz*sizeof(float));
-    params.source_indices_h = &src_indices[0];
-    params.weights_h = &weights[0];
+    params.source_indices_h = (int*) malloc(params.nnz*sizeof(int));
+    params.weights_h = (float*)malloc(params.nnz*sizeof(float));
 
-    params.n = dest_offsets.size();
-    params.destination_offsets_h = &dest_offsets[0];
-    // (int*) malloc((params.n+1)*sizeof(int));
-
-    // for (std::vector<int>::const_iterator i = src_indices.begin(); i != src_indices.end(); ++i)
-    //     std::cout << *i << ", " ;
+    params.n = dest_offsets.size() - 1;
+    params.destination_offsets_h = (int*) malloc((params.n+1)*sizeof(int));
     
-    // std::cout << std::endl;
-    // for (std::vector<int>::const_iterator i = dest_offsets.begin(); i != src_indices.end(); ++i)
-    //     std::cout << *i << ", ";
-    // std::cout << std::endl;
-    // for (std::vector<float>::const_iterator i = weights.begin(); i != src_indices.end(); ++i)
-    //     std::cout << *i << ', ';
+    std::cout << "src_indices: " ;
+    for (int index = 0; index < src_indices.size(); ++index){
+        params.source_indices_h[index] = src_indices[index];
+        // std::cout << params.source_indices_h[index] << ", ";
+    }
+    
+    std::cout << std::endl;
+    
+    std::cout << "dest_offsets: " ;
+    for (int index = 0; index < dest_offsets.size(); ++index){
+        params.destination_offsets_h[index] = dest_offsets[index];
+        // std::cout << params.destination_offsets_h[index] << ", ";
+    }
     std::cout << std::endl;
 
-    std::cout << "here3" << std::endl;
-    std::cout << seeds_count << std::endl;
-    for(int i = 0; i < seeds_count; i++){
-        params.source_indices_h[count] = seeds[i];
-        params.weights_h[count] = 0;
-        count++;
+    std::cout << "weights_h: " ;
+    for (int index = 0; index < weights.size(); ++index){
+        params.weights_h[index] = weights[index];
+        // std::cout << params.weights_h[index] << ", ";
     }
-    std::cout << "here4" << std::endl;
+    std::cout << std::endl;
+    // std::cout << std::endl;
+
+    // std::cout << "here3" << std::endl;
+    // std::cout << seeds_count << std::endl;
+    // for(int i = 0; i < seeds_count; i++){
+    //     params.source_indices_h[count] = seeds[i];
+    //     params.weights_h[count] = 0;
+    //     count++;
+    // }
+    // std::cout << "here4" << std::endl;
 
     return params;
 }
@@ -284,7 +294,8 @@ int main(int argc, char **argv) {
     //leitura de multiplos inputs
     std::vector<int> seeds_fg;
     std::vector<int> seeds_bg;
-    
+    int seed_bg, seed_fg;
+
     std::cout << n_fg << std::endl;
     std::cout << n_bg << std::endl;
     std::cout << std::endl;
@@ -295,7 +306,7 @@ int main(int argc, char **argv) {
         std::cout << y << std::endl;
         std::cout << img->cols << std::endl;
         std::cout << std::endl;
-        int seed_fg = y * img->cols + x;
+        seed_fg = y * img->cols + x;
         seeds_fg.push_back(seed_fg);
     }
 
@@ -305,7 +316,7 @@ int main(int argc, char **argv) {
         std::cout << y << std::endl;
         std::cout << img->cols << std::endl;
         std::cout << std::endl;
-        int seed_bg = y * img->cols + x;
+        seed_bg = y * img->cols + x;
         seeds_bg.push_back(seed_bg);
     }
         std::cout << "done 1" << std::endl;
@@ -313,23 +324,35 @@ int main(int argc, char **argv) {
     graphParams fg_params = GetGraphParams(img, seeds_fg, n_fg);
         std::cout << "c" << std::endl;
     std::cout << fg_params.n << std::endl;
+    std::cout << fg_params.nnz << std::endl;
     graphParams bg_params = GetGraphParams(img, seeds_bg, n_bg);
         std::cout << "d" << std::endl;
     std::cout << bg_params.n << std::endl;
-    int fg_source = 0;
-    
-    NvidiaSSSH(fg_params.weights_h, fg_params.destination_offsets_h, fg_params.source_indices_h, fg_params.n, fg_params.nnz, fg_source);
+    std::cout << bg_params.nnz << std::endl;
+    float * sssp_fg = (float*)malloc(fg_params.n*sizeof(float));
+    NvidiaSSSH(fg_params.weights_h, fg_params.destination_offsets_h, fg_params.source_indices_h, fg_params.n, fg_params.nnz, seed_fg, sssp_fg);
+    printf("sssp_fg\n");
+    // for (int i = 0; i<fg_params.n; i++)  printf("%f\n",sssp_fg[i]); printf("\n");
+    printf("\nDone!\n");
 
-    // imagem *saida = new_image(img->rows, img->cols);
+    float * sssp_bg = (float*)malloc(bg_params.n*sizeof(float));
+    NvidiaSSSH(bg_params.weights_h, bg_params.destination_offsets_h, bg_params.source_indices_h, bg_params.n, bg_params.nnz, seed_bg, sssp_bg);
+    printf("sssp_bg\n");
+    // for (int i = 0; i<bg_params.n; i++)  printf("%f\n",sssp_bg[i]); printf("\n");
+    printf("\nDone!\n");
+
+
+
+    imagem *saida = new_image(img->rows, img->cols);
     
-    // for (int k = 0; k < saida->total_size; k++) {
-    //     if (fg.first[k] > bg.first[k]) {
-    //         saida->pixels[k] = 0;
-    //     } else {
-    //         saida->pixels[k] = 255;
-    //     }
-    // }
+    for (int k = 0; k < saida->total_size; k++) {
+        if (sssp_fg[k] > sssp_bg[k]) {
+            saida->pixels[k] = 0;
+        } else {
+            saida->pixels[k] = 255;
+        }
+    }
     
-    // write_pgm(saida, path_output);    
+    write_pgm(saida, path_output);    
     return 0;
 }

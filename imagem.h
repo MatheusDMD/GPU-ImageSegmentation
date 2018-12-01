@@ -11,10 +11,10 @@ typedef struct {
 } imagem;
 
 
-inline int get_edge(imagem *img, int p1, int p2) {
+inline float get_edge(imagem *img, int p1, int p2) {
     int px1 = img->pixels[p1];
     int px2 = img->pixels[p2];
-    return abs(px1 - px2);
+    return abs(px1 - px2) + 0.1f;
 }
 
 imagem *new_image(int rows, int cols);
