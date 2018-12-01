@@ -24,7 +24,7 @@ __global__ void blur(unsigned char *input, unsigned char *output, int height, in
         }
     }
     new_value /= count;
-    output[i * width + j] = input[i * width + j];
+    output[i * width + j] = new_value;
 }
 
 int main(int argc, char **argv) {
@@ -51,6 +51,7 @@ int main(int argc, char **argv) {
         output_img->pixels[i] = O[i];
     }
     write_pgm(output_img, "blured.pgm");
+    std::cout << "DONE!" << std::endl;
 
     return 0;
 }
