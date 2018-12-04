@@ -201,11 +201,12 @@ graphParams GetGraphParams(imagem *img, std::vector<int> seeds_bg, std::vector<i
 int main(int argc, char **argv) {
     // CMD LINE ARGUMENTS
     if (argc < 3) {
-        std::cout << "Uso:  segmentacao_sequencial entrada.pgm saida.pgm\n";
+        std::cout << "Uso:  segmentacao_sequencial entrada.pgm saida.pgm <edge>\n";
         return -1;
     }
     std::string path(argv[1]);
     std::string path_output(argv[2]);
+
 
     // READ IMAGE
     imagem *input_img = read_pgm(path);
@@ -220,7 +221,16 @@ int main(int argc, char **argv) {
     dim3 dimGrid(ceil(nrows/16.0), ceil(ncols/16.0), 1);
     dim3 dimBlock(16, 16, 1);
     // edge<<<dimGrid,dimBlock>>>(thrust::raw_pointer_cast(input.data()), thrust::raw_pointer_cast(edge.data()), 0, nrows, 0, ncols);
-    edge_filter<<<dimGrid,dimBlock>>>(thrust::raw_pointer_cast(input.data()), thrust::raw_pointer_cast(edge.data()), nrows, ncols);
+    if (argc == 4) {
+        std::string edge_flag(argv[3]);
+        if(edge_flag == "--edge"){
+            edge_filter<<<dimGrid,dimBlock>>>(thrust::raw_pointer_cast(input.data()), thrust::raw_pointer_cast(edge.data()), nrows, ncols);
+            std::cerr << "EDGE PROCESSING - OK" << std::endl;
+        }else{
+            std::cout << "Uso:  segmentacao_sequencial entrada.pgm saida.pgm --edge\n";
+            return -1;
+        }
+    }
 
     thrust::host_vector<unsigned char> O(edge);
     for(int i = 0; i != O.size(); i++) {
