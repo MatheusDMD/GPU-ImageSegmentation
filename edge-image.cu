@@ -9,28 +9,26 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
-__global__ void blur(unsigned char *input, unsigned char *output, int height, int width) {
-    
-    int i=blockIdx.x*blockDim.x+threadIdx.x;
-    int j=blockIdx.y*blockDim.y+threadIdx.y;
+#define MAX(y,x) (y>x?y:x)    // Calcula valor maximo
+#define MIN(y,x) (y<x?y:x)    // Calcula valor minimo
 
-    int soma = 0;
-    int pixels = 0;
-    int pixel = i*width + j;
-    int size = width*height;
+using namespace std;
 
-    for(int x = -1; x <= 1; x++){
-        for(int y = -1; y <= 1; y++){
-            int index = pixel + x*width + y;
-            if (index >= 0 && index < size) {
-                soma += input[index];
-                pixels++;
+_global_ void edge(unsigned char *in, unsigned char *out, int rowStart, int rowEnd, int colStart, int colEnd){
+    int i=blockIdx.x * blockDim.x + threadIdx.x;
+    int j=blockIdx.y * blockDim.y + threadIdx.y;
+    int di, dj;    
+    if (i< rowEnd && j< colEnd) {
+        int min = 256;
+        int max = 0;
+        for(di = MAX(rowStart, i - 1); di <= MIN(i + 1, rowEnd - 1); di++) {
+            for(dj = MAX(colStart, j - 1); dj <= MIN(j + 1, colEnd - 1); dj++) {
+               if(min>in[di*(colEnd-colStart)+dj]) min = in[di*(colEnd-colStart)+dj];
+               if(max<in[di*(colEnd-colStart)+dj]) max = in[di*(colEnd-colStart)+dj]; 
             }
         }
+        out[i*(colEnd-colStart)+j] = max-min;
     }
-    int avg = soma /= pixels;
-    
-    output[i * width + j] = avg;
 }
 
 int main(int argc, char **argv) {
@@ -50,8 +48,8 @@ int main(int argc, char **argv) {
     // dentro do main
     dim3 dimGrid(ceil(nrows/16.0), ceil(ncols/16.0), 1);
     dim3 dimBlock(16, 16, 1);
-    blur<<<dimGrid,dimBlock>>>(thrust::raw_pointer_cast(input.data()), thrust::raw_pointer_cast(output.data()), nrows, ncols);
-    
+    // blur<<<dimGrid,dimBlock>>>(thrust::raw_pointer_cast(input.data()), thrust::raw_pointer_cast(output.data()), nrows, ncols);
+    edge<<<dimGrid,dimBlock>>>(thrust::raw_pointer_cast(input.data()), thrust::raw_pointer_cast(output.data()), 0, img->rows, 0, img->cols);
     thrust::host_vector<unsigned char> O(output);
     for(int i = 0; i != O.size(); i++) {
         output_img->pixels[i] = O[i];

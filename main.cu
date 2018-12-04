@@ -7,12 +7,35 @@
 #include <iterator> 
 #include <cuda_runtime.h>
 #include <nvgraph.h>
+#include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
 #include "imagem.h"
+
+#define MAX(y,x) (y>x?y:x)    // Calcula valor maximo
+#define MIN(y,x) (y<x?y:x)    // Calcula valor minimo
 
 typedef std::pair<double, int> cost_caminho;
 typedef std::pair<double *, int *> result_sssp;
 typedef std::pair<int, int> seed;
 
+__global__ void edge_filter(unsigned char *input, unsigned char *output, int rowEnd, int colEnd) {
+    int rowStart = 0;
+    int colStart = 0;
+    int i=blockIdx.x * blockDim.x + threadIdx.x;
+    int j=blockIdx.y * blockDim.y + threadIdx.y;
+    int di, dj;    
+    if (i< rowEnd && j< colEnd) {
+        int min = 256;
+        int max = 0;
+        for(di = MAX(rowStart, i - 1); di <= MIN(i + 1, rowEnd - 1); di++) {
+            for(dj = MAX(colStart, j - 1); dj <= MIN(j + 1, colEnd - 1); dj++) {
+               if(min>input[di*(colEnd-colStart)+dj]) min = input[di*(colEnd-colStart)+dj];
+               if(max<input[di*(colEnd-colStart)+dj]) max = input[di*(colEnd-colStart)+dj]; 
+            }
+        }
+        output[i*(colEnd-colStart)+j] = max-min;
+    }
+}
 struct graphParams {
     float * weights_h;
     int * destination_offsets_h;
@@ -31,7 +54,7 @@ void check_status(nvgraphStatus_t status)
     }
 }
 
-int NvidiaSSSH(float *weights_h, int *destination_offsets_h, int *source_indices_h, const size_t n, const size_t nnz, int source_seed_bg, int source_seed_fg, float *sssp_1_h, float *sssp_2_h) {
+int NvidiaSSSP(float *weights_h, int *destination_offsets_h, int *source_indices_h, const size_t n, const size_t nnz, int source_seed_bg, int source_seed_fg, float *sssp_1_h, float *sssp_2_h) {
     const size_t vertex_numsets = 2, edge_numsets = 1;
     void** vertex_dim;
 
@@ -149,6 +172,7 @@ graphParams GetGraphParams(imagem *img, std::vector<int> seeds_bg, std::vector<i
             weights.push_back(0.0);
             local_count++;
         }
+        
 
         dest_offsets.push_back(dest_offsets.back() + local_count); // add local_count to last position vector
     }
@@ -184,8 +208,26 @@ int main(int argc, char **argv) {
     std::string path_output(argv[2]);
 
     // READ IMAGE
-    imagem *img = read_pgm(path);
+    imagem *input_img = read_pgm(path);
+    imagem *img = new_image(input_img->rows, input_img->cols);
 
+    thrust::device_vector<unsigned char> input(input_img->pixels, input_img->pixels + input_img->total_size );
+    thrust::device_vector<unsigned char> edge(img->pixels, img->pixels + img->total_size );
+
+    int nrows = input_img->rows;
+    int ncols = input_img->cols;
+    // dentro do main
+    dim3 dimGrid(ceil(nrows/16.0), ceil(ncols/16.0), 1);
+    dim3 dimBlock(16, 16, 1);
+    // edge<<<dimGrid,dimBlock>>>(thrust::raw_pointer_cast(input.data()), thrust::raw_pointer_cast(edge.data()), 0, nrows, 0, ncols);
+    edge_filter<<<dimGrid,dimBlock>>>(thrust::raw_pointer_cast(input.data()), thrust::raw_pointer_cast(edge.data()), nrows, ncols);
+
+    thrust::host_vector<unsigned char> O(edge);
+    for(int i = 0; i != O.size(); i++) {
+        img->pixels[i] = O[i];
+    }
+    write_pgm(img, "edge_selected.pgm");
+    
     // cudaEvent_t start, stop;
     // cudaEventCreate(&start);
     // cudaEventCreate(&stop);
@@ -221,7 +263,7 @@ int main(int argc, char **argv) {
 
     // cudaEventRecord(start);
     // CALCULATE DISTANCE TO NODES
-    NvidiaSSSH(params.weights_h, params.destination_offsets_h, params.source_indices_h, params.n, params.nnz, img->total_size, img->total_size+1, sssp_bg, sssp_fg);
+    NvidiaSSSP(params.weights_h, params.destination_offsets_h, params.source_indices_h, params.n, params.nnz, img->total_size, img->total_size+1, sssp_bg, sssp_fg);
     std::cerr << "DISTANCES CALCULATED - OK" << std::endl;
     // cudaEventRecord(stop);
 
