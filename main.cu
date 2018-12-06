@@ -54,8 +54,8 @@ void check_status(nvgraphStatus_t status)
     }
 }
 
-int NvidiaSSSP(float *weights_h, int *destination_offsets_h, int *source_indices_h, const size_t n, const size_t nnz, int source_seed_bg, int source_seed_fg, float *sssp_1_h, float *sssp_2_h) {
-    const size_t vertex_numsets = 2, edge_numsets = 1;
+int NvidiaSSSH(float *weights_h, int *destination_offsets_h, int *source_indices_h, const size_t n, const size_t nnz, int source_seed, float *sssp_1_h) {
+    const size_t vertex_numsets = 1, edge_numsets = 1;
     void** vertex_dim;
 
     // nvgraph variables
@@ -71,9 +71,7 @@ int NvidiaSSSP(float *weights_h, int *destination_offsets_h, int *source_indices
     vertex_dimT = (cudaDataType_t*)malloc(vertex_numsets*sizeof(cudaDataType_t));
     CSC_input = (nvgraphCSCTopology32I_t) malloc(sizeof(struct nvgraphCSCTopology32I_st));
     vertex_dim[0]= (void*)sssp_1_h;
-    vertex_dim[1]= (void*)sssp_2_h;
     vertex_dimT[0] = CUDA_R_32F;
-    vertex_dimT[1] = CUDA_R_32F;
 
     check_status(nvgraphCreate(&handle));
     check_status(nvgraphCreateGraphDescr (handle, &graph));
@@ -90,20 +88,24 @@ int NvidiaSSSP(float *weights_h, int *destination_offsets_h, int *source_indices
     check_status(nvgraphSetEdgeData(handle, graph, (void*)weights_h, 0));
     
     // SOLVE BG
-    int source_vert = source_seed_bg; //source_seed
+    int source_vert = source_seed; //source_seed
     check_status(nvgraphSssp(handle, graph, 0,  &source_vert, 0));
     check_status(nvgraphGetVertexData(handle, graph, (void*)sssp_1_h, 0));
-
+    // printf("sssp_1_h\n");
+    // for (int i = 0; i<n; i++)  printf("%f\n",sssp_1_h[i]); printf("\n");
+    // printf("\nDone!\n");
     // SOLVE FG
-    source_vert = source_seed_fg; //source_seed
-    check_status(nvgraphSssp(handle, graph, 0,  &source_vert, 0));
-    check_status(nvgraphGetVertexData(handle, graph, (void*)sssp_2_h, 0));
-
+    // int source_vert2 = 6; //source_seed
+    // check_status(nvgraphSssp(handle, graph, 0,  &source_vert2, 0));
+    // check_status(nvgraphGetVertexData(handle, graph, (void*)sssp_2_h, 0));
+    // printf("sssp_2_h\n");
+    // for (int i = 0; i<n; i++)  printf("%f\n",sssp_2_h[i]); printf("\n");
+    // printf("\nDone!\n");
     free(destination_offsets_h);
     free(source_indices_h);
     free(weights_h);
-    free(vertex_dim);
-    free(vertex_dimT);
+    // free(vertex_dim);
+    // free(vertex_dimT);
     free(CSC_input);
     
     //Clean 
@@ -113,7 +115,7 @@ int NvidiaSSSP(float *weights_h, int *destination_offsets_h, int *source_indices
     return 0;
 }
 
-graphParams GetGraphParams(imagem *img, std::vector<int> seeds_bg, std::vector<int> seeds_fg, int seeds_count){
+graphParams GetGraphParams(imagem *img, std::vector<int> seeds, int seeds_count){
     std::vector<int> dest_offsets;
     std::vector<int> src_indices;
     std::vector<float> weights;
@@ -162,17 +164,13 @@ graphParams GetGraphParams(imagem *img, std::vector<int> seeds_bg, std::vector<i
         }
 
         // CHECK IF THE CURRENT POSITION IS A SEED
-        if (std::find(std::begin(seeds_bg), std::end(seeds_bg), vertex) != std::end(seeds_bg)){
+        if (std::find(std::begin(seeds), std::end(seeds), vertex) != std::end(seeds)){
             // ADDS THE VALUE OF THE LAST NODE TO THE SRC INDEX AND PUSHES A ZERO VALUE WEIGHT
             src_indices.push_back(img->total_size);
             weights.push_back(0.0);
             local_count++;
-        }else if (std::find(std::begin(seeds_fg), std::end(seeds_fg), vertex) != std::end(seeds_fg)){
-            src_indices.push_back(img->total_size + 1);
-            weights.push_back(0.0);
-            local_count++;
+            // std::cout << vertex << " BG" << std::endl;
         }
-        
 
         dest_offsets.push_back(dest_offsets.back() + local_count); // add local_count to last position vector
     }
@@ -188,13 +186,22 @@ graphParams GetGraphParams(imagem *img, std::vector<int> seeds_bg, std::vector<i
     // CONVERT STD:VECTORS IN ALOCATED ARRAYS
     for (int index = 0; index < src_indices.size(); ++index){
         params.source_indices_h[index] = src_indices[index];
+        // std::cerr << params.source_indices_h[index] << ", ";
     }
+    std::cerr << std::endl;
+
     for (int index = 0; index < dest_offsets.size(); ++index){
         params.destination_offsets_h[index] = dest_offsets[index];
+        // std::cerr << params.destination_offsets_h[index] << ", ";
     }
+    std::cerr << std::endl;
+
     for (int index = 0; index < weights.size(); ++index){
         params.weights_h[index] = weights[index];
+        // std::cerr << params.weights_h[index] << ", ";
     }
+    std::cerr << std::endl;
+
     return params;
 }
 
@@ -210,34 +217,39 @@ int main(int argc, char **argv) {
 
     // READ IMAGE
     imagem *input_img = read_pgm(path);
-    imagem *img = new_image(input_img->rows, input_img->cols);
-
-    thrust::device_vector<unsigned char> input(input_img->pixels, input_img->pixels + input_img->total_size );
-    thrust::device_vector<unsigned char> edge(img->pixels, img->pixels + img->total_size );
+    imagem *img = read_pgm(path);
 
     int nrows = input_img->rows;
     int ncols = input_img->cols;
-    // dentro do main
-    dim3 dimGrid(ceil(nrows/16.0), ceil(ncols/16.0), 1);
-    dim3 dimBlock(16, 16, 1);
+
     // edge<<<dimGrid,dimBlock>>>(thrust::raw_pointer_cast(input.data()), thrust::raw_pointer_cast(edge.data()), 0, nrows, 0, ncols);
+
     if (argc == 4) {
         std::string edge_flag(argv[3]);
         if(edge_flag == "--edge"){
+            dim3 dimGrid(ceil(nrows/16.0), ceil(ncols/16.0), 1);
+            dim3 dimBlock(16, 16, 1);
+
+            thrust::device_vector<unsigned char> input(input_img->pixels, input_img->pixels + input_img->total_size );
+            thrust::device_vector<unsigned char> edge(img->pixels, img->pixels + img->total_size );
+
             edge_filter<<<dimGrid,dimBlock>>>(thrust::raw_pointer_cast(input.data()), thrust::raw_pointer_cast(edge.data()), nrows, ncols);
+
+            thrust::host_vector<unsigned char> O(edge);
+            for(int i = 0; i != O.size(); i++) {
+                img->pixels[i] = O[i];
+            }
+            write_pgm(img, "edge_selected.pgm");
+
             std::cerr << "EDGE PROCESSING - OK" << std::endl;
         }else{
             std::cout << "Uso:  segmentacao_sequencial entrada.pgm saida.pgm --edge\n";
             return -1;
         }
+    }else{
+        std::cout << "OK!\n";
     }
 
-    thrust::host_vector<unsigned char> O(edge);
-    for(int i = 0; i != O.size(); i++) {
-        img->pixels[i] = O[i];
-    }
-    write_pgm(img, "edge_selected.pgm");
-    
     // cudaEvent_t start, stop;
     // cudaEventCreate(&start);
     // cudaEventCreate(&stop);
@@ -245,6 +257,7 @@ int main(int argc, char **argv) {
     int n_fg, n_bg;
     int x, y;
     std::cin >> n_fg >> n_bg;
+    std::cerr << n_fg << std::endl << n_bg << std::endl;
     
     // READ MULTIPLE SEEDS FROM INPUT FILE
     std::vector<int> seeds_bg;
@@ -254,26 +267,30 @@ int main(int argc, char **argv) {
     for(int i = 0; i < n_bg; i++){
         std::cin >> x >> y;
         int seed_bg = y * img->cols + x;
+        std::cerr << seed_bg << std::endl;
         seeds_bg.push_back(seed_bg);
     }
     for(int i = 0; i < n_fg; i++){
         std::cin >> x >> y;
         int seed_fg = y * img->cols + x;
+        std::cerr << seed_fg << std::endl;
         seeds_fg.push_back(seed_fg);
     }
     std::cerr << "INPUT - OK" << std::endl;
     
     // GET PARAMETERS TO NVGRAPH SSSP FUNCTION
-    graphParams params = GetGraphParams(img, seeds_bg, seeds_fg, n_fg + n_bg);
+    graphParams params_fg = GetGraphParams(img, seeds_fg, n_fg);
+    graphParams params_bg = GetGraphParams(img, seeds_bg, n_bg);
     std::cerr << "PARAMS CREATION - OK" << std::endl;
 
     // ARRAYS TO STORE DISTANCE NODES
-    float * sssp_fg = (float*)malloc(params.n*sizeof(float));
-    float * sssp_bg = (float*)malloc(params.n*sizeof(float));
+    float * sssp_fg = (float*)malloc(params_fg.n*sizeof(float));
+    float * sssp_bg = (float*)malloc(params_bg.n*sizeof(float));
 
     // cudaEventRecord(start);
     // CALCULATE DISTANCE TO NODES
-    NvidiaSSSP(params.weights_h, params.destination_offsets_h, params.source_indices_h, params.n, params.nnz, img->total_size, img->total_size+1, sssp_bg, sssp_fg);
+    NvidiaSSSH(params_fg.weights_h, params_fg.destination_offsets_h, params_fg.source_indices_h, params_fg.n, params_fg.nnz, img->total_size, sssp_fg);
+    NvidiaSSSH(params_bg.weights_h, params_bg.destination_offsets_h, params_bg.source_indices_h, params_bg.n, params_bg.nnz, img->total_size, sssp_bg);
     std::cerr << "DISTANCES CALCULATED - OK" << std::endl;
     // cudaEventRecord(stop);
 
@@ -288,10 +305,13 @@ int main(int argc, char **argv) {
     for (int k = 0; k < saida->total_size; k++) {
         // WHITE -> FOREGROUND
         // BLACK -> BACKGROUND
+        // std::cout << sssp_fg[k] << ", " << sssp_bg[k] << std::endl;
         if (sssp_fg[k] > sssp_bg[k]) {
             saida->pixels[k] = 0;
+            // std::cerr << "0" << std::endl;
         } else {
             saida->pixels[k] = 255;
+            // std::cerr << "255" << std::endl;
         }
     }
 
