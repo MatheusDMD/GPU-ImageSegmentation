@@ -11,8 +11,8 @@
 #include <thrust/host_vector.h>
 #include "imagem.h"
 
-#define MAX(y,x) (y>x?y:x)    // Calcula valor maximo
-#define MIN(y,x) (y<x?y:x)    // Calcula valor minimo
+#define MAX(y,x) (y>x?y:x)
+#define MIN(y,x) (y<x?y:x)
 
 typedef std::pair<double, int> cost_caminho;
 typedef std::pair<double *, int *> result_sssp;
@@ -54,7 +54,7 @@ void check_status(nvgraphStatus_t status)
     }
 }
 
-int NvidiaSSSH(float *weights_h, int *destination_offsets_h, int *source_indices_h, const size_t n, const size_t nnz, int source_seed, float *sssp_1_h) {
+int NvidiaSSSP(float *weights_h, int *destination_offsets_h, int *source_indices_h, const size_t n, const size_t nnz, int source_seed, float *sssp_1_h) {
     const size_t vertex_numsets = 1, edge_numsets = 1;
     void** vertex_dim;
 
@@ -91,21 +91,9 @@ int NvidiaSSSH(float *weights_h, int *destination_offsets_h, int *source_indices
     int source_vert = source_seed; //source_seed
     check_status(nvgraphSssp(handle, graph, 0,  &source_vert, 0));
     check_status(nvgraphGetVertexData(handle, graph, (void*)sssp_1_h, 0));
-    // printf("sssp_1_h\n");
-    // for (int i = 0; i<n; i++)  printf("%f\n",sssp_1_h[i]); printf("\n");
-    // printf("\nDone!\n");
-    // SOLVE FG
-    // int source_vert2 = 6; //source_seed
-    // check_status(nvgraphSssp(handle, graph, 0,  &source_vert2, 0));
-    // check_status(nvgraphGetVertexData(handle, graph, (void*)sssp_2_h, 0));
-    // printf("sssp_2_h\n");
-    // for (int i = 0; i<n; i++)  printf("%f\n",sssp_2_h[i]); printf("\n");
-    // printf("\nDone!\n");
     free(destination_offsets_h);
     free(source_indices_h);
     free(weights_h);
-    // free(vertex_dim);
-    // free(vertex_dimT);
     free(CSC_input);
     
     //Clean 
@@ -188,19 +176,16 @@ graphParams GetGraphParams(imagem *img, std::vector<int> seeds, int seeds_count)
         params.source_indices_h[index] = src_indices[index];
         // std::cerr << params.source_indices_h[index] << ", ";
     }
-    std::cerr << std::endl;
 
     for (int index = 0; index < dest_offsets.size(); ++index){
         params.destination_offsets_h[index] = dest_offsets[index];
         // std::cerr << params.destination_offsets_h[index] << ", ";
     }
-    std::cerr << std::endl;
 
     for (int index = 0; index < weights.size(); ++index){
         params.weights_h[index] = weights[index];
         // std::cerr << params.weights_h[index] << ", ";
     }
-    std::cerr << std::endl;
 
     return params;
 }
@@ -214,7 +199,14 @@ int main(int argc, char **argv) {
     std::string path(argv[1]);
     std::string path_output(argv[2]);
 
-
+    cudaEvent_t total_start, total_stop, start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaEventCreate(&total_start);
+    cudaEventCreate(&total_stop);
+    float elapsed_time_edge, elapsed_time_graph_building, elapsed_time_sssp, elapsed_time_seg_img, elapsed_time_total;
+    elapsed_time_edge = 0.0;
+    
     // READ IMAGE
     imagem *input_img = read_pgm(path);
     imagem *img = read_pgm(path);
@@ -222,11 +214,13 @@ int main(int argc, char **argv) {
     int nrows = input_img->rows;
     int ncols = input_img->cols;
 
-    // edge<<<dimGrid,dimBlock>>>(thrust::raw_pointer_cast(input.data()), thrust::raw_pointer_cast(edge.data()), 0, nrows, 0, ncols);
+    cudaEventRecord(total_start);
 
+    bool show = false;
     if (argc == 4) {
         std::string edge_flag(argv[3]);
-        if(edge_flag == "--edge"){
+        if(edge_flag == "--edge" || edge_flag == "--show"){
+            cudaEventRecord(start);
             dim3 dimGrid(ceil(nrows/16.0), ceil(ncols/16.0), 1);
             dim3 dimBlock(16, 16, 1);
 
@@ -239,8 +233,15 @@ int main(int argc, char **argv) {
             for(int i = 0; i != O.size(); i++) {
                 img->pixels[i] = O[i];
             }
+            cudaEventRecord(stop);
+            cudaEventSynchronize(stop);
+            cudaEventElapsedTime(&elapsed_time_edge, start, stop);
             write_pgm(img, "edge_selected.pgm");
 
+            if(edge_flag == "--show"){
+                show = true;
+                std::cerr << "SHOW ENABLED - OK" << std::endl;
+            }
             std::cerr << "EDGE PROCESSING - OK" << std::endl;
         }else{
             std::cout << "Uso:  segmentacao_sequencial entrada.pgm saida.pgm --edge\n";
@@ -250,14 +251,9 @@ int main(int argc, char **argv) {
         std::cout << "OK!\n";
     }
 
-    // cudaEvent_t start, stop;
-    // cudaEventCreate(&start);
-    // cudaEventCreate(&stop);
-
     int n_fg, n_bg;
     int x, y;
     std::cin >> n_fg >> n_bg;
-    std::cerr << n_fg << std::endl << n_bg << std::endl;
     
     // READ MULTIPLE SEEDS FROM INPUT FILE
     std::vector<int> seeds_bg;
@@ -267,61 +263,79 @@ int main(int argc, char **argv) {
     for(int i = 0; i < n_bg; i++){
         std::cin >> x >> y;
         int seed_bg = y * img->cols + x;
-        std::cerr << seed_bg << std::endl;
         seeds_bg.push_back(seed_bg);
     }
     for(int i = 0; i < n_fg; i++){
         std::cin >> x >> y;
         int seed_fg = y * img->cols + x;
-        std::cerr << seed_fg << std::endl;
         seeds_fg.push_back(seed_fg);
     }
     std::cerr << "INPUT - OK" << std::endl;
     
     // GET PARAMETERS TO NVGRAPH SSSP FUNCTION
+    cudaEventRecord(start);
     graphParams params_fg = GetGraphParams(img, seeds_fg, n_fg);
     graphParams params_bg = GetGraphParams(img, seeds_bg, n_bg);
-    std::cerr << "PARAMS CREATION - OK" << std::endl;
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&elapsed_time_graph_building, start, stop);
+
+    std::cerr << "PARAMS CREATION - OK " << std::endl;
 
     // ARRAYS TO STORE DISTANCE NODES
     float * sssp_fg = (float*)malloc(params_fg.n*sizeof(float));
     float * sssp_bg = (float*)malloc(params_bg.n*sizeof(float));
 
-    // cudaEventRecord(start);
+    cudaEventRecord(start);
     // CALCULATE DISTANCE TO NODES
-    NvidiaSSSH(params_fg.weights_h, params_fg.destination_offsets_h, params_fg.source_indices_h, params_fg.n, params_fg.nnz, img->total_size, sssp_fg);
-    NvidiaSSSH(params_bg.weights_h, params_bg.destination_offsets_h, params_bg.source_indices_h, params_bg.n, params_bg.nnz, img->total_size, sssp_bg);
+    NvidiaSSSP(params_fg.weights_h, params_fg.destination_offsets_h, params_fg.source_indices_h, params_fg.n, params_fg.nnz, img->total_size, sssp_fg);
+    NvidiaSSSP(params_bg.weights_h, params_bg.destination_offsets_h, params_bg.source_indices_h, params_bg.n, params_bg.nnz, img->total_size, sssp_bg);
     std::cerr << "DISTANCES CALCULATED - OK" << std::endl;
-    // cudaEventRecord(stop);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
 
-    // float elapsed_time;
-    // cudaEventElapsedTime(&elapsed_time, start, stop);
-    // std::cerr << elapsed_time << std::endl;
+    cudaEventElapsedTime(&elapsed_time_sssp, start, stop);
 
     // OUTPUT IMAGE
     imagem *saida = new_image(img->rows, img->cols);
 
     // DISTANCE COMPARISON
+    cudaEventRecord(start);
     for (int k = 0; k < saida->total_size; k++) {
         // WHITE -> FOREGROUND
         // BLACK -> BACKGROUND
-        // std::cout << sssp_fg[k] << ", " << sssp_bg[k] << std::endl;
         if (sssp_fg[k] > sssp_bg[k]) {
-            saida->pixels[k] = 0;
-            // std::cerr << "0" << std::endl;
+            if(show){
+                saida->pixels[k] = input_img->pixels[k];
+            }else{
+                saida->pixels[k] = 0;
+            }
         } else {
             saida->pixels[k] = 255;
-            // std::cerr << "255" << std::endl;
         }
     }
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&elapsed_time_seg_img, start, stop);
 
     // WRITE OUTPUT IMAGE
     write_pgm(saida, path_output);    
     std::cerr << "IMAGE OUTPUT - OK" << std::endl;
 
+    cudaEventRecord(total_stop);
+    cudaEventSynchronize(total_stop);
+    cudaEventElapsedTime(&elapsed_time_total, total_start, total_stop);
 
-    // cudaDestroy(&start);
-    // cudaDestroy(&stop);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    cudaEventDestroy(total_start);
+    cudaEventDestroy(total_stop);
+    
+    std::cout << elapsed_time_edge << std::endl;
+    std::cout << elapsed_time_graph_building << std::endl;
+    std::cout << elapsed_time_sssp << std::endl;
+    std::cout << elapsed_time_seg_img << std::endl;
+    std::cout << elapsed_time_total << std::endl;
 
     return 0;
 }
