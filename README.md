@@ -1,24 +1,44 @@
-Projeto 4: segmentação de imagens
-======================
+# Background Remover
+
+This project has the goal of comparing performance between a sequential implementation of the **Single Source Shortest Path** algorithm and a GPGPU (General Purpose Graphic Processing Unit) implementation.
+
+## Compiling and Running
+
+Compile both the sequetial and the GPGPU (nvgraph) using the Make command.
+
+To execute run with the following inputs:
+
+```
+./nvgraph <input_path>.pgm <output_path>.pgm < <input_seeds>.txt
+```
+and
+
+```
+./sequencial <input_path>.pgm <output_path>.pgm < <input_seeds>.txt
+```
+an example would be to run it for the ski example:
+
+```
+./nvgraph sample_images/ski.pgm sample_output/ski_output.pgm --show < sample_input/input_ski.txt
+``` 
+
+to see the original picture as the result of the background remotion program, simply run it with the flag **--show**.
+
+## Input
+
+The input file uses the following structure:
+
+```
+<n_foreground_seeds> <n_background_seeds>
+<x> <y>
+<x> <y>
+...
+```
+
+## Limitations
+- The program only works with PGM images (without comments)
+- The program calls the SSSP functions twice for BG and FG
+- The nvgraph program calls the GraphGen function twice for BG and FG
 
 
-Este projeto contém uma implementação sequencial do algoritmo **Single Source Shortest Path** e sua utilização 
-para a criação de uma segmentação de imagens em frente e fundo. Este programa não foi extensamente testado em 
-imagens grandes ou complexas. 
-
-**Limitações**:
-
-1. o projeto só aceita uma semente de frente e uma semente fundo
-1. o algoritmo **SSSP* é executado duas vezes (uma para frente e uma para fundo)
-1. na função *SSSP* cada ponto é adicionado a fila de prioridade mais de uma vez, mas só é processado se houver chance de melhorar seu caminho. 
-1. o leitor de PGM é extremamente limitado e não suporta comentários no PGM. O melhor é converter usando o programa `convert input.png -compress none -depth 8 out.pgm` 
-
-**Testes iniciais**:
-
-A imagem *teste.pgm* contém um exemplo simples para segmentação. Dois testes possíveis e interessantes são
-
-1. colocar a semente dentro do círculo grande e a semente de fundo fora dos dois círculos
-1. colocar a semente dentro do círculo grande e a semente de fundo dentro do pequeno. 
-
-Antes de rodar, tente prever o comportamento da segmentação final. 
 
