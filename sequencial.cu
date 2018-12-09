@@ -206,6 +206,7 @@ int main(int argc, char **argv) {
     cudaEventElapsedTime(&elapsed_time_total, total_start, total_stop);
 
     std::cout << elapsed_time_edge << std::endl;
+    std::cout << "0" << std::endl;
     std::cout << elapsed_time_sssp << std::endl;
     std::cout << elapsed_time_seg_img << std::endl;
     std::cout << elapsed_time_total << std::endl;
